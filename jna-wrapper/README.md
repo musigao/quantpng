@@ -8,6 +8,7 @@
 - ✅ 类型安全：提供强类型的 Java 接口
 - ✅ 内存管理：自动处理资源清理
 - ✅ 跨平台：支持 Linux、macOS 和 Windows
+- ✅ 修复了Windows PowerShell兼容性问题和指针类型转换
 - ✅ 高级包装：提供与原 JNI 版本兼容的高级 API
 - ✅ 高性能：直接调用原生 C 代码
 
