@@ -1,6 +1,7 @@
 #include "libimagequant.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 // 导出宏定义
 #if defined(__GNUC__) || defined(__clang__)
@@ -14,6 +15,9 @@
 // 定义简化的错误码，与JNA兼容
 #define LIQ_JNA_OK 0
 #define LIQ_JNA_ERROR 1
+
+// 修复指针转换问题：使用intptr_t在所有平台上保证指针大小一致
+typedef intptr_t jna_ptr_t;
 
 // 简化的图像数据结构，用于JNA
 typedef struct {
@@ -32,25 +36,25 @@ typedef struct {
  * 创建 liq_attr 对象
  * 对应 Java: private static native long liq_attr_create();
  */
-JNA_EXPORT long jna_liq_attr_create() {
+JNA_EXPORT jna_ptr_t jna_liq_attr_create() {
     liq_attr *attr = liq_attr_create();
-    return (long)attr;
+    return (jna_ptr_t)attr;
 }
 
 /**
  * 复制 liq_attr 对象
  * 对应 Java: private static native long liq_attr_copy(long orig);
  */
-JNA_EXPORT long jna_liq_attr_copy(long orig) {
+JNA_EXPORT jna_ptr_t jna_liq_attr_copy(jna_ptr_t orig) {
     liq_attr *attr = liq_attr_copy((liq_attr*)orig);
-    return (long)attr;
+    return (jna_ptr_t)attr;
 }
 
 /**
  * 销毁 liq_attr 对象
- * 对应 Java: private static native void liq_attr_destroy(long handle);
+ * 对应 Java: private static native void liq_attr_destroy(jna_ptr_t handle);
  */
-JNA_EXPORT void jna_liq_attr_destroy(long handle) {
+JNA_EXPORT void jna_liq_attr_destroy(jna_ptr_t handle) {
     if (handle != 0) {
         liq_attr_destroy((liq_attr*)handle);
     }
@@ -60,7 +64,7 @@ JNA_EXPORT void jna_liq_attr_destroy(long handle) {
  * 设置最大颜色数
  * 对应 Java: public native boolean setMaxColors(int colors);
  */
-JNA_EXPORT int jna_setMaxColors(long handle, int colors) {
+JNA_EXPORT int jna_setMaxColors(jna_ptr_t handle, int colors) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_max_colors((liq_attr*)handle, colors);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -70,7 +74,7 @@ JNA_EXPORT int jna_setMaxColors(long handle, int colors) {
  * 设置质量（单参数版本）
  * 对应 Java: public native boolean setQuality(int target);
  */
-JNA_EXPORT int jna_setQuality_single(long handle, int target) {
+JNA_EXPORT int jna_setQuality_single(jna_ptr_t handle, int target) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_quality((liq_attr*)handle, target/2, target);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -80,7 +84,7 @@ JNA_EXPORT int jna_setQuality_single(long handle, int target) {
  * 设置质量（双参数版本）
  * 对应 Java: public native boolean setQuality(int min, int max);
  */
-JNA_EXPORT int jna_setQuality_range(long handle, int min, int max) {
+JNA_EXPORT int jna_setQuality_range(jna_ptr_t handle, int min, int max) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_quality((liq_attr*)handle, min, max);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -90,7 +94,7 @@ JNA_EXPORT int jna_setQuality_range(long handle, int min, int max) {
  * 设置速度
  * 对应 Java: public native boolean setSpeed(int speed);
  */
-JNA_EXPORT int jna_setSpeed(long handle, int speed) {
+JNA_EXPORT jna_ptr_t jna_setSpeed(jna_ptr_t handle, int speed) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_speed((liq_attr*)handle, speed);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -100,7 +104,7 @@ JNA_EXPORT int jna_setSpeed(long handle, int speed) {
  * 设置最小色调分离
  * 对应 Java: public native boolean setMinPosterization(int bits);
  */
-JNA_EXPORT int jna_setMinPosterization(long handle, int bits) {
+JNA_EXPORT jna_ptr_t jna_setMinPosterization(jna_ptr_t handle, int bits) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_min_posterization((liq_attr*)handle, bits);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -178,9 +182,9 @@ JNA_EXPORT long jna_liq_image_create(long attr, unsigned char* bitmap, int width
 
 /**
  * 销毁图像对象
- * 对应 Java: private static native void liq_image_destroy(long handle);
+ * 对应 Java: private static native void liq_image_destroy(jna_ptr_t handle);
  */
-JNA_EXPORT void jna_liq_image_destroy(long handle) {
+JNA_EXPORT void jna_liq_image_destroy(jna_ptr_t handle) {
     if (handle == 0) return;
     
     liq_jna_image *jnaimg = (liq_jna_image*)handle;
@@ -197,7 +201,7 @@ JNA_EXPORT void jna_liq_image_destroy(long handle) {
  * 添加固定颜色
  * 对应 Java: public native boolean addFixedColor(int r, int g, int b, int a);
  */
-JNA_EXPORT int jna_addFixedColor(long handle, int r, int g, int b, int a) {
+JNA_EXPORT jna_ptr_t jna_addFixedColor(jna_ptr_t handle, int r, int g, int b, int a) {
     if (handle == 0) return LIQ_JNA_ERROR;
     
     liq_jna_image *jnaimg = (liq_jna_image*)handle;
@@ -210,7 +214,7 @@ JNA_EXPORT int jna_addFixedColor(long handle, int r, int g, int b, int a) {
  * 获取图像宽度
  * 对应 Java: public native int getWidth();
  */
-JNA_EXPORT int jna_getWidth(long handle) {
+JNA_EXPORT jna_ptr_t jna_getWidth(jna_ptr_t handle) {
     if (handle == 0) return 0;
     liq_jna_image *jnaimg = (liq_jna_image*)handle;
     return liq_image_get_width(jnaimg->image);
@@ -220,7 +224,7 @@ JNA_EXPORT int jna_getWidth(long handle) {
  * 获取图像高度
  * 对应 Java: public native int getHeight();
  */
-JNA_EXPORT int jna_getHeight(long handle) {
+JNA_EXPORT jna_ptr_t jna_getHeight(jna_ptr_t handle) {
     if (handle == 0) return 0;
     liq_jna_image *jnaimg = (liq_jna_image*)handle;
     return liq_image_get_height(jnaimg->image);
@@ -244,7 +248,7 @@ JNA_EXPORT long jna_liq_quantize_image(long attr, long image_handle) {
 
 /**
  * 获取调色板
- * 对应 Java: private static native byte[] liq_get_palette(long handle);
+ * 对应 Java: private static native byte[] liq_get_palette(jna_ptr_t handle);
  * 注意：JNA版本返回调色板大小和数据指针，需要在Java端处理
  */
 JNA_EXPORT const liq_palette* jna_liq_get_palette(long result_handle) {
@@ -256,7 +260,7 @@ JNA_EXPORT const liq_palette* jna_liq_get_palette(long result_handle) {
  * 获取调色板数据
  * 辅助函数：获取调色板的颜色数量
  */
-JNA_EXPORT int jna_get_palette_count(const liq_palette* palette) {
+JNA_EXPORT jna_ptr_t jna_get_palette_count(const liq_palette* palette) {
     return palette ? palette->count : 0;
 }
 
@@ -264,7 +268,7 @@ JNA_EXPORT int jna_get_palette_count(const liq_palette* palette) {
  * 获取调色板字节数据 (模拟原始JNI的方式)
  * 返回调色板的实际大小，调色板数据写入buffer
  */
-JNA_EXPORT int jna_get_palette_bytes(long result_handle, unsigned char* buffer, int buffer_size) {
+JNA_EXPORT jna_ptr_t jna_get_palette_bytes(long result_handle, unsigned char* buffer, int buffer_size) {
     if (result_handle == 0) return -1;
     
     const liq_palette *pal = liq_get_palette((liq_result*)result_handle);
@@ -286,7 +290,7 @@ JNA_EXPORT int jna_get_palette_bytes(long result_handle, unsigned char* buffer, 
  * 获取调色板数据
  * 辅助函数：将调色板数据复制到缓冲区
  */
-JNA_EXPORT int jna_copy_palette_data(const liq_palette* palette, unsigned char* buffer, int buffer_size) {
+JNA_EXPORT jna_ptr_t jna_copy_palette_data(const liq_palette* palette, unsigned char* buffer, int buffer_size) {
     if (!palette || !buffer || buffer_size < (int)(palette->count * 4)) return LIQ_JNA_ERROR;
     
     // 直接复制内存，就像原始JNI实现一样
@@ -298,9 +302,9 @@ JNA_EXPORT int jna_copy_palette_data(const liq_palette* palette, unsigned char* 
 
 /**
  * 写入重新映射的图像
- * 对应 Java: private static native boolean liq_write_remapped_image(long handle, long image, byte[] buffer);
+ * 对应 Java: private static native boolean liq_write_remapped_image(jna_ptr_t handle, long image, byte[] buffer);
  */
-JNA_EXPORT int jna_liq_write_remapped_image(long result_handle, long image_handle, unsigned char* buffer, int buffer_size) {
+JNA_EXPORT jna_ptr_t jna_liq_write_remapped_image(long result_handle, long image_handle, unsigned char* buffer, int buffer_size) {
     if (result_handle == 0 || image_handle == 0 || buffer == NULL) return LIQ_JNA_ERROR;
     
     liq_jna_image *jnaimg = (liq_jna_image*)image_handle;
@@ -310,9 +314,9 @@ JNA_EXPORT int jna_liq_write_remapped_image(long result_handle, long image_handl
 
 /**
  * 销毁结果对象
- * 对应 Java: private static native void liq_result_destroy(long handle);
+ * 对应 Java: private static native void liq_result_destroy(jna_ptr_t handle);
  */
-JNA_EXPORT void jna_liq_result_destroy(long handle) {
+JNA_EXPORT void jna_liq_result_destroy(jna_ptr_t handle) {
     if (handle != 0) {
         liq_result_destroy((liq_result*)handle);
     }
@@ -322,7 +326,7 @@ JNA_EXPORT void jna_liq_result_destroy(long handle) {
  * 设置抖动级别
  * 对应 Java: public native boolean setDitheringLevel(float dither_level);
  */
-JNA_EXPORT int jna_setDitheringLevel(long handle, float dither_level) {
+JNA_EXPORT jna_ptr_t jna_setDitheringLevel(jna_ptr_t handle, float dither_level) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_dithering_level((liq_result*)handle, dither_level);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -332,7 +336,7 @@ JNA_EXPORT int jna_setDitheringLevel(long handle, float dither_level) {
  * 设置输出伽马值
  * 对应 Java: public native boolean setGamma(double gamma);
  */
-JNA_EXPORT int jna_setGamma(long handle, double gamma) {
+JNA_EXPORT jna_ptr_t jna_setGamma(jna_ptr_t handle, double gamma) {
     if (handle == 0) return LIQ_JNA_ERROR;
     liq_error error = liq_set_output_gamma((liq_result*)handle, gamma);
     return (error == LIQ_OK) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
@@ -342,7 +346,7 @@ JNA_EXPORT int jna_setGamma(long handle, double gamma) {
  * 获取输出伽马值
  * 对应 Java: public native double getGamma();
  */
-JNA_EXPORT double jna_getGamma(long handle) {
+JNA_EXPORT double jna_getGamma(jna_ptr_t handle) {
     if (handle == 0) return 0.0;
     return liq_get_output_gamma((liq_result*)handle);
 }
@@ -351,7 +355,7 @@ JNA_EXPORT double jna_getGamma(long handle) {
  * 获取量化均方误差
  * 对应 Java: public native double getMeanSquareError();
  */
-JNA_EXPORT double jna_getMeanSquareError(long handle) {
+JNA_EXPORT double jna_getMeanSquareError(jna_ptr_t handle) {
     if (handle == 0) return -1.0;
     return liq_get_quantization_error((liq_result*)handle);
 }
@@ -360,7 +364,7 @@ JNA_EXPORT double jna_getMeanSquareError(long handle) {
  * 获取量化质量
  * 对应 Java: public native int getQuality();
  */
-JNA_EXPORT int jna_getQuality(long handle) {
+JNA_EXPORT jna_ptr_t jna_getQuality(jna_ptr_t handle) {
     if (handle == 0) return 0;
     return liq_get_quantization_quality((liq_result*)handle);
 }
@@ -372,13 +376,13 @@ JNA_EXPORT int jna_getQuality(long handle) {
 /**
  * 获取库版本
  */
-JNA_EXPORT int jna_liq_version() {
+JNA_EXPORT jna_ptr_t jna_liq_version() {
     return liq_version();
 }
 
 /**
  * 检查句柄是否有效
  */
-JNA_EXPORT int jna_is_valid_handle(long handle) {
+JNA_EXPORT jna_ptr_t jna_is_valid_handle(jna_ptr_t handle) {
     return (handle != 0) ? LIQ_JNA_OK : LIQ_JNA_ERROR;
 }

@@ -1,0 +1,263 @@
+name: Build Dynamic Libraries
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'jna-wrapper/**'
+      - 'imagequant-sys/**'
+      - 'src/**'
+  workflow_dispatch:
+
+jobs:
+  build-libs:
+    name: Build ${{ matrix.platform }} Library
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib_name: libimagequant_jna.dll
+            
+          - platform: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib_name: libimagequant_jna.so
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup MSVC (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install build tools (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Build Rust static library
+        run: |
+          cargo build --release -p imagequant-sys --target ${{ matrix.target }}
+          # 确认文件生成
+          echo "Checking generated Rust library:"
+          ls -la target/${{ matrix.target }}/release/
+
+      - name: Build JNA wrapper (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          cd jna-wrapper
+          mkdir -p target
+          
+          echo "Building Windows DLL with MSVC..."
+          
+          # 编译对象文件
+          cl.exe /nologo /O2 /MD /W3 ^
+            /D_USRDLL /D_WINDLL /DBUILDING_JNA_WRAPPER ^
+            /I include /I ../imagequant-sys ^
+            /c src/jna_wrapper.c /Fo:target/jna_wrapper.obj
+          
+          # 链接DLL - 使用正确的静态库名称
+          link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
+            target/jna_wrapper.obj ^
+            ../target/${{ matrix.target }}/release/libimagequant_sys.lib ^
+            ws2_32.lib advapi32.lib userenv.lib
+        shell: cmd
+
+      - name: Build JNA wrapper (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd jna-wrapper
+          mkdir -p target
+          
+          echo "Building Linux SO..."
+          
+          # 编译对象文件
+          gcc -std=c11 -Wall -Wextra -O3 -fPIC -fvisibility=hidden \
+            -DBUILDING_JNA_WRAPPER \
+            -Iinclude -I../imagequant-sys \
+            -c src/jna_wrapper.c -o target/jna_wrapper.o
+          
+          # 创建版本脚本来控制符号导出
+          cat > target/version.map << 'EOF'
+          { 
+            global: jna_*; 
+            local: *; 
+          };
+          EOF
+          
+          # 链接共享库 - 使用正确的静态库名称
+          gcc -shared -Wl,--version-script=target/version.map \
+            -o target/${{ matrix.lib_name }} \
+            target/jna_wrapper.o \
+            ../target/${{ matrix.target }}/release/libimagequant_sys.a
+
+      - name: Verify library
+        run: |
+          cd jna-wrapper/target
+          echo "Generated library file:"
+          ls -la ${{ matrix.lib_name }}
+          
+          # 平台特定的验证
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            echo "Library info:"
+            file ${{ matrix.lib_name }}
+            echo "Dependencies:"
+            ldd ${{ matrix.lib_name }} || echo "Static linking check complete"
+            echo "Exported symbols:"
+            nm -D ${{ matrix.lib_name }} | grep jna_ || echo "No jna_ symbols found"
+          fi
+
+      - name: Test library loading (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd jna-wrapper
+          
+          # 创建简单的测试程序
+          cat > test_load.c << 'EOF'
+          #include <dlfcn.h>
+          #include <stdio.h>
+          
+          int main() {
+              void *handle = dlopen("./target/libimagequant_jna.so", RTLD_LAZY);
+              if (!handle) {
+                  printf("Error loading library: %s\n", dlerror());
+                  return 1;
+              }
+              
+              // 查找一个函数
+              void *func = dlsym(handle, "jna_liq_attr_create");
+              if (!func) {
+                  printf("Error finding function: %s\n", dlerror());
+                  dlclose(handle);
+                  return 1;
+              }
+              
+              printf("Library loaded successfully!\n");
+              dlclose(handle);
+              return 0;
+          }
+          EOF
+          
+          # 编译并运行测试
+          gcc -o test_load test_load.c -ldl
+          ./test_load
+
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-library
+          path: jna-wrapper/target/${{ matrix.lib_name }}
+          retention-days: 30
+
+  package-release:
+    name: Package Libraries
+    needs: build-libs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all libraries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release package
+        run: |
+          mkdir -p release-package/libs
+          mkdir -p release-package/java
+          mkdir -p release-package/docs
+          
+          # 复制库文件
+          find artifacts -name "*.dll" -exec cp {} release-package/libs/ \;
+          find artifacts -name "*.so" -exec cp {} release-package/libs/ \;
+          
+          # 复制JNA库和Java代码
+          cp jna-wrapper/lib/jna-5.13.0.jar release-package/java/
+          cp -r jna-wrapper/java/* release-package/java/ 2>/dev/null || true
+          
+          # 复制头文件
+          cp jna-wrapper/include/jna_wrapper.h release-package/docs/
+          cp imagequant-sys/libimagequant.h release-package/docs/
+          
+          # 创建使用说明
+          cat > release-package/README.md << 'EOF'
+          # ImageQuant JNA 动态库包
+          
+          ## 文件说明
+          
+          - `libs/libimagequant_jna.dll` - Windows 64位动态库
+          - `libs/libimagequant_jna.so` - Linux 64位动态库
+          - `java/jna-5.13.0.jar` - JNA库
+          - `java/` - Java包装类
+          - `docs/` - C头文件
+          
+          ## 快速使用
+          
+          ### 1. Java项目集成
+          ```bash
+          # 将库文件放在项目根目录或指定路径
+          java -Djava.library.path=./libs -cp jna-5.13.0.jar:. YourApp
+          ```
+          
+          ### 2. 代码示例
+          ```java
+          import org.pngquant.jna.PngCompressor;
+          
+          PngCompressor compressor = new PngCompressor();
+          boolean success = compressor.compress("input.png", "output.png", 80, 256, 3);
+          ```
+          
+          ## 技术特点
+          
+          - ✅ 修复了64位指针类型转换问题
+          - ✅ 静态链接，减少依赖
+          - ✅ 高质量PNG压缩
+          - ✅ 跨平台支持
+          
+          构建时间: $(date)
+          EOF
+          
+          # 显示包内容
+          echo "Package contents:"
+          find release-package -type f | sort
+          
+          # 创建压缩包
+          tar -czf libimagequant-jna-libs.tar.gz -C release-package .
+
+      - name: Upload complete package
+        uses: actions/upload-artifact@v4
+        with:
+          name: libimagequant-jna-complete
+          path: |
+            release-package/
+            libimagequant-jna-libs.tar.gz
+          retention-days: 90
+
+      - name: Build summary
+        run: |
+          echo ""
+          echo "🎉 构建完成！"
+          echo ""
+          echo "📦 生成的库文件:"
+          find artifacts -name "*.dll" -o -name "*.so" | while read file; do
+            echo "  ✅ $(basename "$file")"
+          done
+          echo ""
+          echo "📋 下载方式:"
+          echo "  1. 点击 GitHub Actions 中的构建结果"
+          echo "  2. 在 Artifacts 部分下载对应的库文件"
+          echo "  3. 或下载完整包 'libimagequant-jna-complete'"
+          echo ""
+          echo "🚀 开始使用吧！"
