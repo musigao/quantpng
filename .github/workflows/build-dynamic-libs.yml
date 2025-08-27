@@ -47,15 +47,20 @@ jobs:
           sudo apt-get install -y build-essential
 
       - name: Build Rust static library
+        run: cargo build --release -p imagequant-sys --target ${{ matrix.target }}
+
+      - name: Verify Rust library (Windows)
+        if: matrix.platform == 'windows'
         run: |
-          cargo build --release -p imagequant-sys --target ${{ matrix.target }}
-          # 确认文件生成
           echo "Checking generated Rust library:"
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            dir target\${{ matrix.target }}\release\
-          else
-            ls -la target/${{ matrix.target }}/release/
-          fi
+          dir target\${{ matrix.target }}\release\
+        shell: cmd
+
+      - name: Verify Rust library (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          echo "Checking generated Rust library:"
+          ls -la target/${{ matrix.target }}/release/
 
       - name: Build JNA wrapper (Windows)
         if: matrix.platform == 'windows'
@@ -107,25 +112,27 @@ jobs:
             ../target/${{ matrix.target }}/release/libimagequant_sys.a \
             -lm -lpthread -ldl
 
-      - name: Verify library
+      - name: Verify library (Windows)
+        if: matrix.platform == 'windows'
         run: |
           cd jna-wrapper/target
           echo "Generated library file:"
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            dir ${{ matrix.lib_name }}
-          else
-            ls -la ${{ matrix.lib_name }}
-          fi
+          dir ${{ matrix.lib_name }}
+        shell: cmd
+
+      - name: Verify library (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd jna-wrapper/target
+          echo "Generated library file:"
+          ls -la ${{ matrix.lib_name }}
           
-          # 平台特定的验证
-          if [ "${{ matrix.platform }}" = "linux" ]; then
-            echo "Library info:"
-            file ${{ matrix.lib_name }}
-            echo "Dependencies:"
-            ldd ${{ matrix.lib_name }} || echo "Static linking check complete"
-            echo "Exported symbols:"
-            nm -D ${{ matrix.lib_name }} | grep jna_ || echo "No jna_ symbols found"
-          fi
+          echo "Library info:"
+          file ${{ matrix.lib_name }}
+          echo "Dependencies:"
+          ldd ${{ matrix.lib_name }} || echo "Static linking check complete"
+          echo "Exported symbols:"
+          nm -D ${{ matrix.lib_name }} | grep jna_ || echo "No jna_ symbols found"
 
       - name: Test library loading (Linux)
         if: matrix.platform == 'linux'
