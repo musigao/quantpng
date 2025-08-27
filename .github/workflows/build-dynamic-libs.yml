@@ -47,22 +47,20 @@ jobs:
           sudo apt-get install -y build-essential
 
       - name: Build Rust static library
-        run: |
-          cd imagequant-sys
-          cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release -p imagequant-sys --target ${{ matrix.target }}
 
       - name: Verify Rust library (Windows)
         if: matrix.platform == 'windows'
         run: |
           echo "Checking generated Rust library:"
-          dir imagequant-sys\target\${{ matrix.target }}\release\
+          dir target\${{ matrix.target }}\release\
         shell: cmd
 
       - name: Verify Rust library (Linux)
         if: matrix.platform == 'linux'
         run: |
           echo "Checking generated Rust library:"
-          ls -la imagequant-sys/target/${{ matrix.target }}/release/
+          ls -la target/${{ matrix.target }}/release/
 
       - name: Build JNA wrapper (Windows)
         if: matrix.platform == 'windows'
@@ -81,7 +79,7 @@ jobs:
           rem 链接DLL - 使用正确的静态库名称和路径
           link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
             target/jna_wrapper.obj ^
-            ..\imagequant-sys\target\${{ matrix.target }}\release\imagequant_sys.lib ^
+            ..\target\${{ matrix.target }}\release\imagequant_sys.lib ^
             ws2_32.lib advapi32.lib userenv.lib
         shell: cmd
 
