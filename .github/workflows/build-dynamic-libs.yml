@@ -91,8 +91,8 @@ jobs:
           
           echo "Building Linux SO..."
           
-          # 编译对象文件
-          gcc -std=c11 -Wall -Wextra -O3 -fPIC -fvisibility=hidden \
+          # 编译对象文件 - 优化大小
+          gcc -std=c11 -Wall -Wextra -Os -fPIC -fvisibility=hidden \
             -DBUILDING_JNA_WRAPPER \
             -Iinclude -I../imagequant-sys \
             -c src/jna_wrapper.c -o target/jna_wrapper.o
@@ -105,8 +105,8 @@ jobs:
           };
           EOF
           
-          # 链接共享库 - 使用正确的静态库名称，添加数学库
-          gcc -shared -Wl,--version-script=target/version.map \
+          # 链接共享库 - 使用正确的静态库名称，添加数学库，优化大小
+          gcc -shared -Wl,--version-script=target/version.map -Wl,--strip-all \
             -o target/${{ matrix.lib_name }} \
             target/jna_wrapper.o \
             ../target/${{ matrix.target }}/release/libimagequant_sys.a \
