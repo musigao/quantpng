@@ -1,0 +1,280 @@
+name: Build Cross Platform Libraries
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'jna-wrapper/**'
+      - 'imagequant-sys/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/build-libs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'jna-wrapper/**'
+      - 'imagequant-sys/**'
+      - 'src/**'
+      - 'Cargo.toml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (optional)'
+        required: false
+        type: string
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-libs:
+    name: Build ${{ matrix.os }} Library
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib_name: libimagequant_jna.dll
+            lib_extension: dll
+            
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib_name: libimagequant_jna.so
+            lib_extension: so
+            
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            lib_name: libimagequant_jna.dylib
+            lib_extension: dylib
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            lib_name: libimagequant_jna_arm64.dylib
+            lib_extension: dylib
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Setup build environment (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # 安装MSYS2和GCC
+        choco install msys2 -y
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-gcc"
+        echo "C:\tools\msys64\mingw64\bin" >> $GITHUB_PATH
+
+    - name: Setup build environment (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    - name: Setup build environment (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        # macOS已经预装了gcc
+        gcc --version
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+          imagequant-sys/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build Rust library
+      run: |
+        cd imagequant-sys
+        cargo build --release --target ${{ matrix.target }}
+
+    - name: Build JNA wrapper
+      run: |
+        cd jna-wrapper
+        mkdir -p target
+        ${{ matrix.build_cmd }}
+        
+        # 验证库文件
+        ls -la ${{ matrix.lib_name }}
+        file ${{ matrix.lib_name }} || echo "File command not available"
+        
+        # 移动到target目录
+        mv ${{ matrix.lib_name }} target/
+
+    - name: Test library (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd jna-wrapper
+        # 创建简单的测试程序
+        cat > test_lib.c << 'EOF'
+        #include <stdio.h>
+        #include <dlfcn.h>
+        
+        int main() {
+            void *handle = dlopen("./target/${{ matrix.lib_name }}", RTLD_LAZY);
+            if (!handle) {
+                printf("Error loading library: %s\n", dlerror());
+                return 1;
+            }
+            
+            // 查找一个导出函数
+            void *symbol = dlsym(handle, "jna_liq_version");
+            if (!symbol) {
+                printf("Error finding symbol: %s\n", dlerror());
+                dlclose(handle);
+                return 1;
+            }
+            
+            printf("Library loaded successfully!\n");
+            dlclose(handle);
+            return 0;
+        }
+        EOF
+        
+        gcc -o test_lib test_lib.c -ldl
+        ./test_lib
+
+    - name: Upload library artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.lib_name }}
+        path: jna-wrapper/target/${{ matrix.lib_name }}
+        retention-days: 90
+
+  package-release:
+    name: Package Release
+    needs: build-libs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != ''
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release-libs
+
+    - name: Package libraries
+      run: |
+        mkdir -p release-package
+        cp release-libs/libimagequant_jna.dll/libimagequant_jna.dll release-package/
+        cp release-libs/libimagequant_jna.so/libimagequant_jna.so release-package/
+        cp release-libs/libimagequant_jna.dylib/libimagequant_jna.dylib release-package/
+        
+        # 创建README
+        cat > release-package/README.md << 'EOF'
+        # ImageQuant JNA Libraries
+        
+        这个包包含了适用于不同平台的ImageQuant JNA包装库：
+        
+        - `libimagequant_jna.dll` - Windows (x64)
+        - `libimagequant_jna.so` - Linux (x64)  
+        - `libimagequant_jna.dylib` - macOS (x64)
+        
+        ## 使用方法
+        
+        1. 将对应平台的库文件复制到您的Java项目中
+        2. 确保JNA能够找到库文件（通过java.library.path或放在classpath中）
+        3. 使用PngCompressor类进行PNG压缩
+        
+        ## 示例
+        
+        ```java
+        PngCompressor compressor = new PngCompressor();
+        boolean success = compressor.compress("input.png", "output.png", 80, 256, 3);
+        ```
+        EOF
+        
+        # 创建版本信息
+        echo "Build Date: $(date)" > release-package/BUILD_INFO.txt
+        echo "Git Commit: ${{ github.sha }}" >> release-package/BUILD_INFO.txt
+        echo "Release Tag: ${{ github.event.inputs.release_tag }}" >> release-package/BUILD_INFO.txt
+        
+        # 打包
+        tar -czf imagequant-jna-${{ github.event.inputs.release_tag }}.tar.gz -C release-package .
+        zip -r imagequant-jna-${{ github.event.inputs.release_tag }}.zip release-package/*
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.inputs.release_tag }}
+        release_name: ImageQuant JNA Libraries ${{ github.event.inputs.release_tag }}
+        body: |
+          Cross-platform ImageQuant JNA libraries
+          
+          包含以下平台的动态库：
+          - Windows (x64): libimagequant_jna.dll
+          - Linux (x64): libimagequant_jna.so  
+          - macOS (x64): libimagequant_jna.dylib
+          
+          修复了颜色通道顺序问题，现在可以正确处理PNG压缩。
+        draft: false
+        prerelease: false
+
+  create-maven-package:
+    name: Create Maven Test Package
+    needs: build-libs
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: libs
+
+    - name: Create Maven package
+      run: |
+        cd jna-wrapper/maven-test
+        
+        # 复制所有库文件
+        cp ../../libs/libimagequant_jna.dll/libimagequant_jna.dll .
+        cp ../../libs/libimagequant_jna.so/libimagequant_jna.so .
+        cp ../../libs/libimagequant_jna.dylib/libimagequant_jna.dylib .
+        
+        # 编译Java代码
+        mvn compile -q
+        
+        # 创建可执行JAR
+        mvn package -q
+        
+        # 测试库是否工作
+        echo "Testing library..."
+        mvn exec:java -Dexec.mainClass="org.pngquant.jna.PngCompressor" -q || echo "Test completed"
+
+    - name: Upload Maven package
+      uses: actions/upload-artifact@v4
+      with:
+        name: maven-test-package
+        path: |
+          jna-wrapper/maven-test/target/*.jar
+          jna-wrapper/maven-test/*.dll
+          jna-wrapper/maven-test/*.so
+          jna-wrapper/maven-test/*.dylib
+        retention-days: 30

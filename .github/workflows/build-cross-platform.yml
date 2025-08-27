@@ -1,0 +1,363 @@
+name: Build Cross Platform Libraries
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'jna-wrapper/**'
+      - 'imagequant-sys/**'
+      - 'src/**'
+      - 'Cargo.toml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib_name: libimagequant_jna.dll
+            
+          - platform: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib_name: libimagequant_jna.so
+            
+          - platform: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            lib_name: libimagequant_jna.dylib
+            
+          - platform: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            lib_name: libimagequant_jna_arm64.dylib
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup MSVC (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install build dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            imagequant-sys/target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build Rust static library
+        run: |
+          cd imagequant-sys
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build JNA wrapper (Windows)
+        if: matrix.platform == 'windows-x64'
+        run: |
+          cd jna-wrapper
+          mkdir -p target
+          
+          cl.exe /nologo /O2 /MD /D_USRDLL /D_WINDLL /DBUILDING_JNA_WRAPPER ^
+            /I include /I ../imagequant-sys ^
+            /c src/jna_wrapper.c /Fo:target/jna_wrapper.obj
+            
+          link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
+            target/jna_wrapper.obj ^
+            ../imagequant-sys/target/${{ matrix.target }}/release/imagequant_sys.lib ^
+            ws2_32.lib advapi32.lib userenv.lib
+        shell: cmd
+
+      - name: Build JNA wrapper (Linux)
+        if: matrix.platform == 'linux-x64'
+        run: |
+          cd jna-wrapper
+          mkdir -p target
+          
+          gcc -std=c11 -Wall -Wextra -O3 -fPIC -fvisibility=hidden \
+            -DBUILDING_JNA_WRAPPER \
+            -Iinclude -I../imagequant-sys \
+            -c src/jna_wrapper.c -o target/jna_wrapper.o
+          
+          echo "{ global: jna_*; local: *; };" > target/version.map
+          
+          gcc -shared -Wl,--version-script=target/version.map \
+            -o target/${{ matrix.lib_name }} \
+            target/jna_wrapper.o \
+            ../imagequant-sys/target/${{ matrix.target }}/release/libimagequant_sys.a
+
+      - name: Build JNA wrapper (macOS)
+        if: startsWith(matrix.platform, 'macos-')
+        run: |
+          cd jna-wrapper
+          mkdir -p target
+          
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            ARCH_FLAGS="-arch arm64"
+          else
+            ARCH_FLAGS="-arch x86_64"
+          fi
+          
+          gcc -std=c11 -Wall -Wextra -O3 -fPIC -fvisibility=hidden \
+            $ARCH_FLAGS \
+            -DBUILDING_JNA_WRAPPER \
+            -Iinclude -I../imagequant-sys \
+            -c src/jna_wrapper.c -o target/jna_wrapper.o
+          
+          gcc -shared -undefined dynamic_lookup $ARCH_FLAGS \
+            -o target/${{ matrix.lib_name }} \
+            target/jna_wrapper.o \
+            ../imagequant-sys/target/${{ matrix.target }}/release/libimagequant_sys.a
+
+      - name: Verify library
+        run: |
+          cd jna-wrapper/target
+          ls -la ${{ matrix.lib_name }}
+          
+          # 检查文件信息
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Windows下没有file命令，使用dir查看
+            dir ${{ matrix.lib_name }}
+          else
+            file ${{ matrix.lib_name }}
+            # 检查依赖
+            if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+              ldd ${{ matrix.lib_name }} || echo "Static linking check"
+            elif [[ "${{ matrix.platform }}" == macos-* ]]; then
+              otool -L ${{ matrix.lib_name }} || echo "Dynamic library check"
+            fi
+          fi
+
+      - name: Upload library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-library
+          path: jna-wrapper/target/${{ matrix.lib_name }}
+          retention-days: 30
+
+  test:
+    name: Test Libraries
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize libraries
+        run: |
+          mkdir -p jna-wrapper/target
+          find artifacts -name "*.dll" -exec cp {} jna-wrapper/target/ \;
+          find artifacts -name "*.so" -exec cp {} jna-wrapper/target/ \;
+          find artifacts -name "*.dylib" -exec cp {} jna-wrapper/target/ \;
+          
+          echo "Available libraries:"
+          ls -la jna-wrapper/target/
+
+      - name: Compile Java test
+        run: |
+          cd jna-wrapper
+          javac -cp lib/jna-5.13.0.jar:. test/JNAWrapperTest.java
+
+      - name: Test library loading (Linux)
+        run: |
+          cd jna-wrapper
+          echo "Testing Linux library..."
+          java -Djava.library.path=target -cp lib/jna-5.13.0.jar:. test.JNAWrapperTest
+
+  package:
+    name: Create Release Package
+    if: github.event.inputs.create_release == 'true' || startsWith(github.ref, 'refs/tags/')
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release package
+        run: |
+          mkdir -p release-package/libs
+          mkdir -p release-package/java
+          mkdir -p release-package/include
+          
+          # 复制库文件
+          find artifacts -name "*.dll" -exec cp {} release-package/libs/ \;
+          find artifacts -name "*.so" -exec cp {} release-package/libs/ \;
+          find artifacts -name "*.dylib" -exec cp {} release-package/libs/ \;
+          
+          # 复制Java文件
+          cp -r jna-wrapper/java/* release-package/java/ 2>/dev/null || true
+          cp jna-wrapper/lib/jna-5.13.0.jar release-package/java/
+          
+          # 复制头文件
+          cp jna-wrapper/include/jna_wrapper.h release-package/include/
+          cp imagequant-sys/libimagequant.h release-package/include/
+          
+          # 创建使用说明
+          cat > release-package/README.md << 'EOF'
+          # ImageQuant JNA Cross-Platform Libraries
+          
+          这个包包含了适用于多个平台的 ImageQuant JNA 包装库。
+          
+          ## 文件结构
+          
+          ```
+          libs/
+            ├── libimagequant_jna.dll        # Windows x64
+            ├── libimagequant_jna.so         # Linux x64
+            ├── libimagequant_jna.dylib      # macOS x64 (Intel)
+            └── libimagequant_jna_arm64.dylib # macOS ARM64 (Apple Silicon)
+          
+          java/
+            ├── jna-5.13.0.jar              # JNA 库
+            └── org/pngquant/jna/            # Java 包装类
+          
+          include/
+            ├── jna_wrapper.h                # JNA 包装器头文件
+            └── libimagequant.h              # 原始 libimagequant 头文件
+          ```
+          
+          ## 使用方法
+          
+          1. **选择合适的库文件**
+             - Windows: `libimagequant_jna.dll`
+             - Linux: `libimagequant_jna.so`
+             - macOS Intel: `libimagequant_jna.dylib`
+             - macOS Apple Silicon: `libimagequant_jna_arm64.dylib`
+          
+          2. **设置 Java 库路径**
+             ```bash
+             java -Djava.library.path=/path/to/libs YourApplication
+             ```
+          
+          3. **在代码中使用**
+             ```java
+             import org.pngquant.jna.PngCompressor;
+             
+             PngCompressor compressor = new PngCompressor();
+             boolean success = compressor.compress("input.png", "output.png", 80, 256, 3);
+             ```
+          
+          ## 特性
+          
+          - ✅ 修复了颜色通道顺序问题
+          - ✅ 支持 RGBA 和 RGB 图像
+          - ✅ 高质量有损压缩
+          - ✅ 可调节的质量和颜色数量参数
+          - ✅ 跨平台支持
+          
+          ## 系统要求
+          
+          - Java 8 或更高版本
+          - 对应平台的 64 位系统
+          
+          ## 构建信息
+          
+          - 构建时间: $(date)
+          - Git 提交: $GITHUB_SHA
+          - 仓库: $GITHUB_REPOSITORY
+          EOF
+          
+          # 显示包内容
+          echo "Release package contents:"
+          find release-package -type f | sort
+
+      - name: Create archive
+        run: |
+          cd release-package
+          tar -czf ../libimagequant-jna-$(date +%Y%m%d-%H%M%S).tar.gz *
+          cd ..
+          ls -la *.tar.gz
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: libimagequant-jna-release
+          path: |
+            *.tar.gz
+            release-package/
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: "*.tar.gz"
+          body: |
+            # ImageQuant JNA Cross-Platform Libraries
+            
+            自动构建的跨平台 ImageQuant JNA 包装库。
+            
+            ## 支持平台
+            - Windows x64
+            - Linux x64  
+            - macOS x64 (Intel)
+            - macOS ARM64 (Apple Silicon)
+            
+            ## 下载说明
+            下载 tar.gz 文件并解压，选择适合您平台的库文件使用。
+            
+            详细使用说明请查看解压后的 README.md 文件。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    name: Cleanup old artifacts
+    if: always()
+    needs: [build, test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete temporary artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            windows-x64-library
+            linux-x64-library
+            macos-x64-library
+            macos-arm64-library
+          failOnError: false
