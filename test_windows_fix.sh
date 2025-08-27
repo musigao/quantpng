@@ -27,8 +27,8 @@ echo ""
 echo "2. 检查workflow配置..."
 
 # 检查构建路径修复
-if grep -q "cd imagequant-sys" .github/workflows/build-dynamic-libs.yml; then
-    echo "✓ 构建路径已修复：使用imagequant-sys目录"
+if grep -q "cargo build --release -p imagequant-sys" .github/workflows/build-dynamic-libs.yml; then
+    echo "✓ 构建路径已修复：使用根目录构建"
 else
     echo "✗ 构建路径未修复"
 fi
@@ -41,16 +41,18 @@ else
 fi
 
 # 检查路径修复
-if grep -q "imagequant-sys\\\\target" .github/workflows/build-dynamic-libs.yml; then
-    echo "✓ 库路径已修复：使用imagequant-sys/target路径"
+if grep -q "..\\\\target\\\\" .github/workflows/build-dynamic-libs.yml; then
+    echo "✓ Windows库路径已修复：使用../target路径"
 else
-    echo "✗ 库路径未修复"  
+    echo "✗ Windows库路径未修复"  
 fi
 
 echo ""
 echo "3. 关键修复点总结："
-echo "   - Rust库构建：在imagequant-sys目录下执行"
-echo "   - 库文件名：imagequant_sys.lib (Windows)"
-echo "   - 库路径：../imagequant-sys/target/{target}/release/"
+echo "   - Rust库构建：在根目录执行 cargo build --release -p imagequant-sys"
+echo "   - Linux库文件：../target/{target}/release/libimagequant_sys.a (保持原有配置)"
+echo "   - Windows库文件：../target/{target}/release/imagequant_sys.lib (仅修复文件名)"
+echo "   - Linux路径验证：target/{target}/release/ (保持原有)"
+echo "   - Windows路径验证：target/{target}/release/ (保持原有)"
 echo ""
 echo "修复完成！现在可以重新运行GitHub Actions进行测试。"

@@ -2,7 +2,12 @@
 
 ## 问题描述
 
-在GitHub Actions中构建Windows DLL时出现以下错误：
+在GitHub Actions```cmd
+link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
+  target/jna_wrapper.obj ^
+  ..\target\${{ matrix.target }}\release\imagequant_sys.lib ^
+  ws2_32.lib advapi32.lib userenv.lib ntdll.lib kernel32.lib
+```dows DLL时出现以下错误：
 ```
 LINK : fatal error LNK1181: cannot open input file '..\target\x86_64-pc-windows-msvc\release\libimagequant_sys.lib'
 ```
@@ -22,6 +27,11 @@ LINK : fatal error LNK1181: cannot open input file '..\target\x86_64-pc-windows-
 ### 3. 构建顺序和工作目录问题
 - 需要在 `imagequant-sys` 目录下构建 Rust 静态库
 - 确保构建输出路径正确
+
+### 4. Windows链接库缺失问题
+- **错误**: 缺少NT API相关的系统库，导致LNK2019未解析外部符号错误
+- **解决**: 添加 `ntdll.lib` 和 `kernel32.lib` 来解析NT API函数
+- **错误符号**: `__imp_NtReadFile`, `__imp_RtlNtStatusToDosError`, `__imp_NtWriteFile` 等
 
 ## 解决方案
 
@@ -57,7 +67,21 @@ link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
   ws2_32.lib advapi32.lib userenv.lib
 ```
 
-### 修复3: 更新验证步骤
+### 修复4: 添加必要的Windows系统库
+```cmd
+# 原有的库
+ws2_32.lib advapi32.lib userenv.lib
+
+# 添加的库（解决NT API符号）
+ntdll.lib kernel32.lib
+```
+
+这些库的作用：
+- `ntdll.lib`: 包含NT API函数 (NtReadFile, NtWriteFile等)
+- `kernel32.lib`: Windows核心API
+- `ws2_32.lib`: Windows Socket API
+- `advapi32.lib`: 高级Windows API
+- `userenv.lib`: 用户环境API
 Windows验证：
 ```cmd
 dir imagequant-sys\target\${{ matrix.target }}\release\

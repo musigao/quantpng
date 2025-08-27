@@ -97,7 +97,7 @@ jobs:
           link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
             target/jna_wrapper.obj ^
             ../imagequant-sys/target/${{ matrix.target }}/release/imagequant_sys.lib ^
-            ws2_32.lib advapi32.lib userenv.lib
+            ws2_32.lib advapi32.lib userenv.lib ntdll.lib kernel32.lib
         shell: cmd
 
       - name: Build JNA wrapper (Linux)
