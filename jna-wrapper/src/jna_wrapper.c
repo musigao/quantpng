@@ -145,7 +145,7 @@ static void convert_rgb(liq_color row_out[], int row_index, int width, void* use
  * 创建图像对象
  * 对应 Java: private static native long liq_image_create(long attr, byte[] bitmap, int width, int height, int components);
  */
-JNA_EXPORT long jna_liq_image_create(long attr, unsigned char* bitmap, int width, int height, int components) {
+JNA_EXPORT jna_ptr_t jna_liq_image_create(jna_ptr_t attr, unsigned char* bitmap, int width, int height, int components) {
     if (attr == 0 || bitmap == NULL) return 0;
     
     liq_jna_image *jnaimg = malloc(sizeof(liq_jna_image));
@@ -177,7 +177,7 @@ JNA_EXPORT long jna_liq_image_create(long attr, unsigned char* bitmap, int width
         return 0;
     }
     
-    return (long)jnaimg;
+    return (jna_ptr_t)jnaimg;
 }
 
 /**
@@ -238,12 +238,12 @@ JNA_EXPORT jna_ptr_t jna_getHeight(jna_ptr_t handle) {
  * 量化图像
  * 对应 Java: private static native long liq_quantize_image(long attr, long image);
  */
-JNA_EXPORT long jna_liq_quantize_image(long attr, long image_handle) {
+JNA_EXPORT jna_ptr_t jna_liq_quantize_image(jna_ptr_t attr, jna_ptr_t image_handle) {
     if (attr == 0 || image_handle == 0) return 0;
     
     liq_jna_image *jnaimg = (liq_jna_image*)image_handle;
     liq_result *result = liq_quantize_image((liq_attr*)attr, jnaimg->image);
-    return (long)result;
+    return (jna_ptr_t)result;
 }
 
 /**
@@ -251,7 +251,7 @@ JNA_EXPORT long jna_liq_quantize_image(long attr, long image_handle) {
  * 对应 Java: private static native byte[] liq_get_palette(jna_ptr_t handle);
  * 注意：JNA版本返回调色板大小和数据指针，需要在Java端处理
  */
-JNA_EXPORT const liq_palette* jna_liq_get_palette(long result_handle) {
+JNA_EXPORT const liq_palette* jna_liq_get_palette(jna_ptr_t result_handle) {
     if (result_handle == 0) return NULL;
     return liq_get_palette((liq_result*)result_handle);
 }
@@ -268,7 +268,7 @@ JNA_EXPORT jna_ptr_t jna_get_palette_count(const liq_palette* palette) {
  * 获取调色板字节数据 (模拟原始JNI的方式)
  * 返回调色板的实际大小，调色板数据写入buffer
  */
-JNA_EXPORT jna_ptr_t jna_get_palette_bytes(long result_handle, unsigned char* buffer, int buffer_size) {
+JNA_EXPORT jna_ptr_t jna_get_palette_bytes(jna_ptr_t result_handle, unsigned char* buffer, int buffer_size) {
     if (result_handle == 0) return -1;
     
     const liq_palette *pal = liq_get_palette((liq_result*)result_handle);
@@ -304,7 +304,7 @@ JNA_EXPORT jna_ptr_t jna_copy_palette_data(const liq_palette* palette, unsigned 
  * 写入重新映射的图像
  * 对应 Java: private static native boolean liq_write_remapped_image(jna_ptr_t handle, long image, byte[] buffer);
  */
-JNA_EXPORT jna_ptr_t jna_liq_write_remapped_image(long result_handle, long image_handle, unsigned char* buffer, int buffer_size) {
+JNA_EXPORT jna_ptr_t jna_liq_write_remapped_image(jna_ptr_t result_handle, jna_ptr_t image_handle, unsigned char* buffer, int buffer_size) {
     if (result_handle == 0 || image_handle == 0 || buffer == NULL) return LIQ_JNA_ERROR;
     
     liq_jna_image *jnaimg = (liq_jna_image*)image_handle;

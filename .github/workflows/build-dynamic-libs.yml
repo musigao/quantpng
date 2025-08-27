@@ -66,20 +66,20 @@ jobs:
         if: matrix.platform == 'windows'
         run: |
           cd jna-wrapper
-          mkdir -p target
+          if not exist target mkdir target
           
-          echo "Building Windows DLL with MSVC..."
+          echo Building Windows DLL with MSVC...
           
-          # 编译对象文件
+          rem 编译对象文件
           cl.exe /nologo /O2 /MD /W3 ^
             /D_USRDLL /D_WINDLL /DBUILDING_JNA_WRAPPER ^
             /I include /I ../imagequant-sys ^
             /c src/jna_wrapper.c /Fo:target/jna_wrapper.obj
           
-          # 链接DLL - 使用正确的静态库名称
+          rem 链接DLL - 使用正确的静态库名称和路径
           link.exe /nologo /DLL /OUT:target/${{ matrix.lib_name }} ^
             target/jna_wrapper.obj ^
-            ../target/${{ matrix.target }}/release/libimagequant_sys.lib ^
+            ..\target\${{ matrix.target }}\release\libimagequant_sys.lib ^
             ws2_32.lib advapi32.lib userenv.lib
         shell: cmd
 
