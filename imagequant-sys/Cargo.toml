@@ -43,13 +43,8 @@ imagequant = { path = "..", version = "4.5.0", default-features = false, feature
 bitflags = "2.5"
 libc = "0.2.153"
 
-[profile.release]
-debug = false
-strip = true
-panic = "abort"
-
-[profile.dev]
-panic = "abort"
+# Note: profile configurations are managed at workspace level in root Cargo.toml
+# Removed [profile.release] and [profile.dev] to eliminate workspace warnings
 
 [package.metadata.capi.library]
 name = "imagequant"
