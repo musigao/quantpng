@@ -1,8 +1,17 @@
 # [libimagequant](https://pngquant.org/lib/) — Image Quantization Library
 
-Imagequant library converts RGBA images to palette-based 8-bit indexed images, *including* alpha component. It's ideal for generating tiny PNG images and [nice-looking GIFs](https://gif.ski).
+🎨 Imagequant library converts RGBA images to palette-based 8-bit indexed images, *including* alpha component. It's ideal for generating tiny PNG images and [nice-looking GIFs](https://gif.ski).
 
-Image encoding/decoding isn't handled by the library itself, bring your own encoder. If you're looking for a command-line tool, see [pngquant](https://pngquant.org).
+📦 Image encoding/decoding isn't handled by the library itself, bring your own encoder. If you're looking for a command-line tool, see [pngquant](https://pngquant.org).
+
+## 🚀 Cross-Platform Builds
+
+This repository now includes GitHub Actions workflows for building cross-platform JNA wrapper libraries:
+- 🪟 Windows DLL (`libimagequant_jna.dll`)
+- 🐧 Linux SO (`libimagequant_jna.so`) 
+- 🍎 macOS dylib (`libimagequant_jna.dylib`)
+
+Use the **Quick Build Libraries** workflow in GitHub Actions to generate libraries for your platform!
 
 ## Getting started in C
 
